@@ -31,6 +31,6 @@ def warmup():
 
 
 def decode(audio, model, with_word_timestamps, language=None):
-    from .client import decode_audio
+    from .moshi_client import decode_audio
 
     return decode_audio(audio)
