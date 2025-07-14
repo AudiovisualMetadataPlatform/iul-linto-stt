@@ -1,3 +1,8 @@
+"""
+This module acts as an adapter between a LinTO-like streaming client and
+the Kyutai/Moshi ASR server. It handles WebSocket connections,
+forwards audio streams, and relays transcription results back to the client.
+"""
 import asyncio
 import json
 import logging
@@ -9,7 +14,7 @@ import websockets
 from websockets.legacy.server import WebSocketServerProtocol
 
 from . import KYUTAI_API_KEY, KYUTAI_URL
-from .utils import SAMPLE_RATE
+from .utils import SAMPLE_RATE, resample_audio
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +31,20 @@ async def forward_client(ws_client: WebSocketServerProtocol, ws_server, connecti
         await ws_client.close(code=1003, reason="Invalid config")
         return
 
+    # Warm-up phase: send a single silent packet to start the stream,
+    # then wait for 2 seconds while discarding any incoming audio.
     await ws_server.send(
-        msgpack.packb({"type": "Audio", "pcm": [0.0] * SAMPLE_RATE}, use_single_float=True)
+        msgpack.packb({"type": "Audio", "pcm": [0.0]}, use_single_float=True)
     )
+    warmup_end_time = asyncio.get_event_loop().time() + 2.0
+    while asyncio.get_event_loop().time() < warmup_end_time:
+        try:
+            # Discard incoming audio until warmup complete.
+            _ = await asyncio.wait_for(ws_client.recv(), timeout=0.05)
+        except asyncio.TimeoutError:
+            # No message received, just wait
+            await asyncio.sleep(0.05)
+
     while True:
         message = await ws_client.recv()
         if isinstance(message, str) and message.strip().startswith("{"):
@@ -38,11 +54,7 @@ async def forward_client(ws_client: WebSocketServerProtocol, ws_server, connecti
             except Exception:
                 continue
         audio = np.frombuffer(message, dtype=np.int16).astype(np.float32)
-        if sr != SAMPLE_RATE:
-            from scipy.signal import resample_poly
-
-            gcd = np.gcd(sr, SAMPLE_RATE)
-            audio = resample_poly(audio, SAMPLE_RATE // gcd, sr // gcd)
+        audio = resample_audio(audio, sr)
         audio /= 32768.0
         await ws_server.send(
             msgpack.packb({"type": "Audio", "pcm": audio.tolist()}, use_single_float=True)
