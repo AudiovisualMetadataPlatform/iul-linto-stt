@@ -22,6 +22,8 @@ services:
       context: .
       dockerfile: Dockerfile
       target: runtime
+      args:
+        - CUDARC_COMPUTE=${CUDARC_COMPUTE:-89}
     container_name: moshi-stt-server-cuda
     ports:
       - "8080:8080"
