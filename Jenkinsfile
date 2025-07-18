@@ -45,6 +45,9 @@ pipeline {
             }
             steps {
                 echo 'Publishing latest'
+                dir('kyutai') {
+                    sh 'git submodule update --init --recursive'
+                }
                 script {
                     def changedFiles = sh(returnStdout: true, script: 'git diff --name-only HEAD^ HEAD').trim()
                     echo "My changed files: ${changedFiles}"
@@ -85,6 +88,9 @@ pipeline {
             }
             steps {
                 echo 'Publishing unstable'
+                dir('kyutai') {
+                    sh 'git submodule update --init --recursive'
+                }
                 script {
                     def changedFiles = sh(returnStdout: true, script: 'git diff --name-only HEAD^ HEAD').trim()
                     echo "My changed files: ${changedFiles}"
