@@ -19,14 +19,13 @@ logger = logging.getLogger(__name__)
 
 async def _fun_wrapper(ws):
     """Wrap wssDecode function to add STT Model reference"""
-    connection_id = str(uuid.uuid4())
-    logger.info(f"[{connection_id}] Client connected: {ws.remote_address}")
+    logger.info(f"Client connected: {ws.remote_address}")
     try:
-        await wssDecode(ws, MODEL, connection_id=connection_id)
+        await wssDecode(ws, MODEL)
     except Exception as e:
-        logger.error(f"[{connection_id}] Error in connection handler: {e}", exc_info=True)
+        logger.error(f"Error in connection handler: {e}", exc_info=True)
     finally:
-        logger.info(f"[{connection_id}] Client disconnected: {ws.remote_address}")
+        logger.info(f"Client disconnected: {ws.remote_address}")
 
 
 async def main():
