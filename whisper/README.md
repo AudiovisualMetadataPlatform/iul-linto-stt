@@ -140,7 +140,9 @@ An example of .env file is provided in [whisper/.envdefault](https://github.com/
 | STREAMING_PORT | (For the websocket mode) the listening port for ingoing WS connexions. If not specified, the default is 80 | `80` |
 | STREAMING_MIN_CHUNK_SIZE | The minimal size of the buffer (in seconds) before transcribing. If not specified, the default is 0.5 | `0.5` \| `26` \| ... |
 | STREAMING_BUFFER_TRIMMING_SEC | The maximum targeted length of the buffer (in seconds). It tries to cut after a transcription has been made. If not specified, the default is 8 | `8` \| `10` \| ... |
-| STREAMING_PAUSE_FOR_FINAL | The minimum duration of silence (in seconds) needed to be able to output a final. If not specified, the default is 1.5 | `0.5` \| `2` \| ... |
+| STREAMING_FINAL_MIN_DURATION | The minimum duration of a final. If not specified, the default is 2 | `1` \| `2` \| ... |
+| STREAMING_FINAL_MAX_DURATION | The maxmimum duration of a final. Above that it will try to output a final on "," and silences. If not specified, the default is 10.0 | `10` \| ... |
+| STREAMING_PAUSE_FOR_FINAL | The minimum duration of silence (in seconds) needed to be able to output a final. Used if no punctuation marks are found in text. If not specified, the default is 1.5 | `0.5` \| `2` \| ... |
 | STREAMING_TIMEOUT_FOR_SILENCE | If VAD is applied locally before sending data to the server, this will allow the server to find the silence. The `packet duration` is determined from the first packet. If a packet is not received during `packet duration * STREAMING_TIMEOUT_FOR_SILENCE` it considers that a silence (lasting the packet duration) is present. Value should be between 1 and 2. If not specified, the default is 1.5 | `1.8` \| ... |
 | SERVICE_NAME | (For the task mode only) queue's name for task processing | `my-stt` |
 | SERVICE_BROKER | (For the task mode only) URL of the message broker | `redis://my-broker:6379` |

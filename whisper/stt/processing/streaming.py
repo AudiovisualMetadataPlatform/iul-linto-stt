@@ -12,8 +12,8 @@ from stt import (
    logger,
    USE_CTRANSLATE2,
    VAD, VAD_DILATATION, VAD_MIN_SPEECH_DURATION, VAD_MIN_SILENCE_DURATION,
-   STREAMING_BUFFER_TRIMMING_SEC, STREAMING_MIN_CHUNK_SIZE,
-   STREAMING_PAUSE_FOR_FINAL, STREAMING_TIMEOUT_FOR_SILENCE,
+   STREAMING_BUFFER_TRIMMING_SEC, STREAMING_MIN_CHUNK_SIZE, STREAMING_TIMEOUT_FOR_SILENCE,
+   STREAMING_FINAL_MIN_DURATION, STREAMING_FINAL_MAX_DURATION, STREAMING_PAUSE_FOR_FINAL,
    DEFAULT_TEMPERATURE, DEFAULT_BEST_OF, DEFAULT_BEAM_SIZE
 )
 from websockets.legacy.server import WebSocketServerProtocol
@@ -68,7 +68,9 @@ async def wssDecode(ws: WebSocketServerProtocol, model_and_alignementmodel):
         online = OnlineASRProcessor(
             asr, logfile=sys.stderr, buffer_trimming=STREAMING_BUFFER_TRIMMING_SEC, vad=VAD, sample_rate=sample_rate, \
                 dilatation=VAD_DILATATION, min_speech_duration=VAD_MIN_SPEECH_DURATION, min_silence_duration=VAD_MIN_SILENCE_DURATION,
-                pause_for_final=STREAMING_PAUSE_FOR_FINAL
+                final_min_duration=STREAMING_FINAL_MIN_DURATION,
+                final_max_duration=STREAMING_FINAL_MAX_DURATION,
+                streaming_pause_for_final=STREAMING_PAUSE_FOR_FINAL
         )
         logger.info("Starting transcription ...")
         executor = ThreadPoolExecutor()
@@ -97,7 +99,13 @@ async def wssDecode(ws: WebSocketServerProtocol, model_and_alignementmodel):
                 await ws.close()
                 logger.info("Closing connection")
                 break
-            if message is not None:
+            if message is None:
+                silence_chunk = np.zeros(int(sample_rate * received_chunk_size* 1), dtype=np.float32)
+                off = online.buffer_time_offset
+                dur = len(online.audio_buffer)/online.sampling_rate
+                online.insert_audio_chunk(silence_chunk)
+                logger.debug(f"Silence chunk inserted ({(len(silence_chunk)/online.sampling_rate):.2f}s) at {off:.2f} for {dur:.2f} (now {(len(online.audio_buffer)/online.sampling_rate):.2f})")
+            else:
                 if len(pile)<2:
                     pile.append(message)
                 audio_chunk = bytes_to_array(message)
@@ -197,7 +205,6 @@ class OnlineASRProcessor:
         self,
         asr,
         buffer_trimming=15,
-        pause_for_final=1.5,
         buffer_trimming_words=None,
         vad="auditok",
         logfile=sys.stderr,
@@ -205,6 +212,9 @@ class OnlineASRProcessor:
         min_speech_duration=0.1,
         min_silence_duration=0.1,
         dilatation=0.5,
+        final_min_duration=2,
+        final_max_duration=10,
+        streaming_pause_for_final=1,
     ):
         """
         asr: WhisperASR object
@@ -216,12 +226,14 @@ class OnlineASRProcessor:
 
         self.buffer_trimming_sec = buffer_trimming
         self.buffer_trimming_words = buffer_trimming_words
-        self.pause_for_final = pause_for_final
         self.vad = vad
         self.vad_dilatation = dilatation
         self.vad_min_speech_duration = min_speech_duration
         self.vad_min_silence_duration = min_silence_duration
         self.sampling_rate = sample_rate
+        self.final_min_duration = final_min_duration
+        self.final_max_duration = final_max_duration
+        self.streaming_pause_for_final = streaming_pause_for_final
 
     def init(self):
         """run this when starting or restarting processing"""
@@ -309,10 +321,17 @@ class OnlineASRProcessor:
 
         final = (None, None, "")
         end_word = None
-        for item in reversed(self.buffered_final):
-            if item[2] and item[2][-1] in string.punctuation:
-                end_word = item[1]
-                break
+
+        if end_word is None:
+            for item in reversed(self.buffered_final):
+                if item[2] and item[2][-1] in [".", "!", "?"]:
+                    end_word = item[1]
+                    break
+        if end_word is None:
+            for prev, curr in zip(reversed(self.buffered_final[:-1]), reversed(self.buffered_final[1:])):
+                if curr[0] - prev[0] >= self.streaming_pause_for_final:
+                    end_word = prev[1]
+                    break
         if end_word:
             # assemble the final
             f = []
@@ -320,9 +339,10 @@ class OnlineASRProcessor:
                 if i[1]>end_word:
                     break
                 f.append(i)
-            if f:
-                final = self.to_flush(f)
-                self.buffered_final = self.buffered_final[len(f):]
+            if f[-1][1]-f[0][0]>self.final_min_duration:
+                if f:
+                    final = self.to_flush(f)
+                    self.buffered_final = self.buffered_final[len(f):]
         partial = self.buffered_final.copy()
         partial.extend(buffer)
         return final, self.to_flush(partial)
