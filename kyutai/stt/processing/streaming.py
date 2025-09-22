@@ -19,7 +19,7 @@ from .utils import SAMPLE_RATE, resample_audio
 logger = logging.getLogger(__name__)
 
 
-async def forward_client(ws_client: WebSocketServerProtocol, ws_server, connection_id: str):
+async def forward_client(ws_client: WebSocketServerProtocol, ws_server):
     """Forward audio from LinTO client to Kyutai server"""
     # first message from client contains config
     res = await ws_client.recv()
@@ -27,7 +27,7 @@ async def forward_client(ws_client: WebSocketServerProtocol, ws_server, connecti
         config = json.loads(res)["config"]
         sr = int(config.get("sample_rate", 16000))
     except Exception:
-        logger.error(f"[{connection_id}] Invalid config from client")
+        logger.error(f"Invalid config from client")
         await ws_client.close(code=1003, reason="Invalid config")
         return
 
@@ -66,7 +66,7 @@ async def forward_client(ws_client: WebSocketServerProtocol, ws_server, connecti
         )
 
 
-async def forward_server(ws_server, ws_client: WebSocketServerProtocol, connection_id: str):
+async def forward_server(ws_server, ws_client: WebSocketServerProtocol):
     transcript = []
     timer_task = None
     final_transcript_delay = float(os.environ.get("FINAL_TRANSCRIPT_DELAY", 1.5))
@@ -77,7 +77,7 @@ async def forward_server(ws_server, ws_client: WebSocketServerProtocol, connecti
         if transcript:
             full_text = " ".join(transcript)
             if log_transcripts:
-                logger.info(f"[{connection_id}] Final transcript: {full_text}")
+                logger.info(f"Final transcript: {full_text}")
             await ws_client.send(json.dumps({"text": full_text}))
             transcript = []
 
@@ -105,7 +105,7 @@ async def forward_server(ws_server, ws_client: WebSocketServerProtocol, connecti
                     timer_task.add_done_callback(on_timer_done)
 
     except websockets.exceptions.ConnectionClosed:
-        logger.info(f"[{connection_id}] Connection closed by peer.")
+        logger.info(f"Connection closed by peer.")
     finally:
         if timer_task:
             timer_task.cancel()
@@ -114,17 +114,17 @@ async def forward_server(ws_server, ws_client: WebSocketServerProtocol, connecti
             await send_final_transcript()
 
 
-async def wssDecode(ws: WebSocketServerProtocol, _model, connection_id: str):
+async def wssDecode(ws: WebSocketServerProtocol, _model):
     url = f"{KYUTAI_URL}/api/asr-streaming"
     headers = {"kyutai-api-key": KYUTAI_API_KEY}
-    logger.info(f"[{connection_id}] Attempting to connect to backend at {url}")
+    logger.info(f"Attempting to connect to backend at {url}")
     send_task = None
     recv_task = None
     try:
         async with websockets.connect(url, additional_headers=headers) as ws_server:
-            logger.info(f"[{connection_id}] Successfully connected to backend at {url}")
-            send_task = asyncio.create_task(forward_client(ws, ws_server, connection_id))
-            recv_task = asyncio.create_task(forward_server(ws_server, ws, connection_id))
+            logger.info(f"Successfully connected to backend at {url}")
+            send_task = asyncio.create_task(forward_client(ws, ws_server))
+            recv_task = asyncio.create_task(forward_server(ws_server, ws))
             done, pending = await asyncio.wait(
                 [send_task, recv_task],
                 return_when=asyncio.FIRST_COMPLETED,
@@ -133,7 +133,7 @@ async def wssDecode(ws: WebSocketServerProtocol, _model, connection_id: str):
                 task.cancel()
     except Exception as e:
         logger.error(
-            f"[{connection_id}] Failed to connect or communicate with backend at {url}: {e}",
+            f"Failed to connect or communicate with backend at {url}: {e}",
             exc_info=True
         )
     finally:
@@ -141,4 +141,4 @@ async def wssDecode(ws: WebSocketServerProtocol, _model, connection_id: str):
             send_task.cancel()
         if recv_task:
             recv_task.cancel()
-        logger.info(f"[{connection_id}] Connection closed.")
+        logger.info(f"Connection closed.")
