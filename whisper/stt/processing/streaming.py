@@ -81,8 +81,6 @@ async def wssDecode(ws: WebSocketServerProtocol, model_and_alignementmodel):
                 message = await asyncio.wait_for(ws.recv(), timeout=timeout)
             except asyncio.TimeoutError:
                 message = None
-            if message and len(pile)<2:
-                pile.append(message)
             if (isinstance(message, str) and re.match(EOF_REGEX, message)):
                 final = []
                 if current_task:    # wait for the last asynchronous prediction to finish
@@ -99,13 +97,9 @@ async def wssDecode(ws: WebSocketServerProtocol, model_and_alignementmodel):
                 await ws.close()
                 logger.info("Closing connection")
                 break
-            if message is None:
-                silence_chunk = np.zeros(int(sample_rate * received_chunk_size* 1), dtype=np.float32)
-                off = online.buffer_time_offset
-                dur = len(online.audio_buffer)/online.sampling_rate
-                online.insert_audio_chunk(silence_chunk)
-                logger.debug(f"Silence chunk inserted ({(len(silence_chunk)/online.sampling_rate):.2f}s) at {off:.2f} for {dur:.2f} (now {(len(online.audio_buffer)/online.sampling_rate):.2f})")
-            else:
+            if message is not None:
+                if len(pile)<2:
+                    pile.append(message)
                 audio_chunk = bytes_to_array(message)
                 if received_chunk_size is None:
                     received_chunk_size = len(audio_chunk)/sample_rate
@@ -122,8 +116,7 @@ async def wssDecode(ws: WebSocketServerProtocol, model_and_alignementmodel):
                         logger.debug(f"Sending partial '{p}'")
                         if o[0] is not None:
                             await ws.send(whisper_to_json(o))
-                        else:
-                            await ws.send(whisper_to_json(p, partial=True))
+                        await ws.send(whisper_to_json(p, partial=True))
                     if len(pile)>0:     # if there are messages in the pile, launch a new transcription task
                         logger.debug(f"Launching new task t={(len(online.audio_buffer)/online.sampling_rate)+online.buffer_time_offset:.2f}s")
                         current_task = asyncio.get_event_loop().run_in_executor(executor, online.process_iter)
@@ -315,20 +308,12 @@ class OnlineASRProcessor:
         )
 
         final = (None, None, "")
-        # if last word of commited text is a punctuation, it should be the end of the final if other conditions are met
-        if len(self.buffered_final)>0 and self.buffered_final[-1][2][-1] in string.punctuation:
-            end_word = self.buffered_final[-1][1]
-        else:
-            end_word = None
-        # if there are no words in the buffer (all words are committed), a final should be output
-        if len(buffer)==0:
-            buffer_end_audio_timestamp = (len(self.audio_buffer)/self.sampling_rate)+self.buffer_time_offset
-        # if there are only a few words in the buffer, a final should be output with the text before the buffer
-        elif len(buffer)<=3:
-            buffer_end_audio_timestamp = buffer[0][1]
-        else:
-            buffer_end_audio_timestamp = None
-        if end_word and buffer_end_audio_timestamp and end_word+self.pause_for_final < buffer_end_audio_timestamp :
+        end_word = None
+        for item in reversed(self.buffered_final):
+            if item[2] and item[2][-1] in string.punctuation:
+                end_word = item[1]
+                break
+        if end_word:
             # assemble the final
             f = []
             for i in self.buffered_final:
