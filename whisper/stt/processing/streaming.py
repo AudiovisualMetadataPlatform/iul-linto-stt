@@ -46,7 +46,7 @@ def whisper_to_json(o, partial=False):
     return json_res
 
 
-async def wssDecode(ws: WebSocketServerProtocol, model_and_alignementmodel):
+async def wssDecode(ws: WebSocketServerProtocol, model_and_alignementmodel, connection_id):
     """Async Decode function endpoint"""
     try:
         res = await ws.recv()
@@ -272,14 +272,21 @@ class OnlineASRProcessor:
         final = (None, None, "")
         end_word = None
         for item in reversed(self.buffered_final):
-            if item[2] and item[2][-1] in [".", "!", "?"]:
+            if item[2] and item[2][-1] in [".", "!", "?"] and item[1]-self.buffered_final[0][0]>self.final_min_duration:
                 end_word = item[1]
+                logger.info(f"FINAL: punctuation detected: {item}")
                 break
         if end_word is None:
             for prev, curr in zip(reversed(self.buffered_final[:-1]), reversed(self.buffered_final[1:])):
-                if curr[0] - prev[1] >= self.streaming_pause_for_final:
+                if curr[0] - prev[1] >= self.streaming_pause_for_final and prev[1]-self.buffered_final[0][0]>self.final_min_duration:
                     end_word = prev[1]
+                    logger.info(f"FINAL: silence detected: {curr[0] - prev[1]}>{self.streaming_pause_for_final} (between {prev} and {curr})")
                     break
+        if end_word is None and len(self.buffered_final)>1:
+            buffered_final_duration = self.buffered_final[-1][1] - self.buffered_final[0][0]
+            if buffered_final_duration > self.final_max_duration:
+                end_word = self.buffered_final[-1][1]
+                logger.info(f"FINAL: max duration reached: {buffered_final_duration}>{self.final_max_duration} ({self.buffered_final})")
         if end_word:
             # assemble the final
             f = []
@@ -287,10 +294,8 @@ class OnlineASRProcessor:
                 if i[1]>end_word:
                     break
                 f.append(i)
-            if f[-1][1]-f[0][0]>self.final_min_duration:
-                if f:
-                    final = self.to_flush(f)
-                    self.buffered_final = self.buffered_final[len(f):]
+            final = self.to_flush(f)
+            self.buffered_final = self.buffered_final[len(f):]
         return final
 
     def chunk_completed_segment(self, res, chunk_silence=False, speech_segments=None):
@@ -456,6 +461,7 @@ class HypothesisBuffer:
 
     def complete(self):
         return self.buffer
+
 class ASRBase:
 
     sep = " "  # join transcribe words with this character (" " for whisper_timestamped,

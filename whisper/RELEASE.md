@@ -1,3 +1,6 @@
+# 1.0.7
+- Improve finals for streaming
+
 # 1.0.6
 - Fix the healthcheck for the websocket mode
 - Fix healthcheck for the http mode (by adding curl to the docker images)
