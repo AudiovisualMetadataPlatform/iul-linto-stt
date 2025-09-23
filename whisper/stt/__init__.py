@@ -29,7 +29,9 @@ STREAMING_BUFFER_TRIMMING_SEC=float(os.environ.get("STREAMING_BUFFER_TRIMMING_SE
 STREAMING_FINAL_MIN_DURATION=float(os.environ.get("STREAMING_FINAL_MIN_DURATION", 2.0))
 STREAMING_FINAL_MAX_DURATION=float(os.environ.get("STREAMING_FINAL_MAX_DURATION", 10.0))
 STREAMING_PAUSE_FOR_FINAL =float(os.environ.get("STREAMING_PAUSE_FOR_FINAL ", 1.0))
-STREAMING_TIMEOUT_FOR_SILENCE=float(os.environ.get("STREAMING_TIMEOUT_FOR_SILENCE", 1.5))   # will consider that silence is detected if no audio is received for the duration of the paquet (dtermined from the first message) * this variable
+STREAMING_TIMEOUT_FOR_SILENCE=os.environ.get("STREAMING_TIMEOUT_FOR_SILENCE", None)   # will consider that silence is detected if no audio is received for the duration of the paquet (dtermined from the first message) * this variable
+if STREAMING_TIMEOUT_FOR_SILENCE:
+    STREAMING_TIMEOUT_FOR_SILENCE = float(STREAMING_TIMEOUT_FOR_SILENCE)
 
 try:
     import faster_whisper

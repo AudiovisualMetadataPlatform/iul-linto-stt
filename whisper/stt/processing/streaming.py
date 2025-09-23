@@ -111,7 +111,10 @@ async def wssDecode(ws: WebSocketServerProtocol, model_and_alignementmodel):
                 audio_chunk = bytes_to_array(message)
                 if received_chunk_size is None:
                     received_chunk_size = len(audio_chunk)/sample_rate
-                    timeout = received_chunk_size * STREAMING_TIMEOUT_FOR_SILENCE
+                    if STREAMING_TIMEOUT_FOR_SILENCE:
+                        timeout = received_chunk_size * STREAMING_TIMEOUT_FOR_SILENCE
+                    else:
+                        timeout = None
                 online.insert_audio_chunk(audio_chunk)
                 logger.debug(f"Received chunk of {len(audio_chunk)/sample_rate:.2f}s")
             if online.get_buffer_size() >= STREAMING_MIN_CHUNK_SIZE:
@@ -133,70 +136,6 @@ async def wssDecode(ws: WebSocketServerProtocol, model_and_alignementmodel):
                 logger.debug(f"Chunk too small {online.get_buffer_size()}<{STREAMING_MIN_CHUNK_SIZE} (added {len(audio_chunk)/sample_rate}), skipping")
     except ConnectionClosed as e:
         logger.info(f"Connection closed {e}")
-
-
-class HypothesisBuffer:
-
-    def __init__(self, logfile=sys.stderr):
-        self.commited_in_buffer = []
-        self.buffer = []
-        self.new = []
-
-        self.last_commited_time = 0
-        self.last_commited_word = None
-        self.last_buffered_time = -1
-
-        self.logfile = logfile
-
-    def insert(self, new, offset):
-        # compare self.commited_in_buffer and new. It inserts only the words in new that extend the commited_in_buffer, it means they are roughly behind last_commited_time and new in content
-        # the new tail is added to self.new
-        new = [(a + offset, b + offset, t) for a, b, t in new]
-        self.new = [(a, b, t) for a, b, t in new if a > self.last_commited_time - 0.1]
-        if len(self.new) >= 1:
-            a, b, t = self.new[0]
-            if abs(a - self.last_commited_time) < 1:
-                if self.commited_in_buffer:
-                    # it's going to search for 1, 2, ..., 5 consecutive words (n-grams) that are identical in commited and new. If they are, they're dropped.
-                    cn = len(self.commited_in_buffer)
-                    nn = len(self.new)
-                    for i in range(1, min(min(cn, nn), 5) + 1):  # 5 is the maximum
-                        c = " ".join([self.commited_in_buffer[-j][2] for j in range(1, i + 1)][::-1])
-                        tail = " ".join(self.new[j - 1][2] for j in range(1, i + 1))
-                        if c == tail:
-                            logger.debug(f"removing last {i} words:")
-                            for j in range(i):
-                                logger.debug(f"\t{self.new.pop(0)}")
-                            break
-
-    def flush(self):
-        # returns commited chunk = the longest common prefix of 2 last inserts.
-        commit = []
-        while self.new:
-            na, nb, nt = self.new[0]
-
-            if len(self.buffer) == 0:
-                break
-
-            if nt.lower().translate(str.maketrans("", "", string.punctuation)) == self.buffer[0][2].lower().translate(str.maketrans("", "", string.punctuation)):
-                commit.append((na, nb, nt))
-                self.last_commited_word = nt
-                self.last_commited_time = nb
-                self.buffer.pop(0)
-                self.new.pop(0)
-            else:
-                break
-        self.buffer = self.new
-        self.new = []
-        self.commited_in_buffer.extend(commit)
-        return commit, self.buffer
-
-    def pop_commited(self, time):
-        while self.commited_in_buffer and self.commited_in_buffer[0][1] <= time:
-            self.commited_in_buffer.pop(0)
-
-    def complete(self):
-        return self.buffer
 
 
 class OnlineASRProcessor:
@@ -274,20 +213,27 @@ class OnlineASRProcessor:
             t for _, _, t in non_prompt
         )
 
-    def process_iter(self):
-        """Runs on the current audio buffer.
-        Returns: a tuple (beg_timestamp, end_timestamp, "text"), or (None, None, "").
-        The non-empty text is confirmed (committed) partial transcript.
-        """
+
+    def transcribe(self, audio, conversion_function):
         prompt, non_prompt = self.prompt()
         logger.debug(
             f"Transcribing {len(self.audio_buffer)/self.sampling_rate:2.2f} seconds starting at {self.buffer_time_offset:2.2f}s"
         )
         logger.debug(f"PROMPT:{prompt}")
         logger.debug(f"CONTEXT:{non_prompt}")
+        res = self.asr.transcribe(audio, init_prompt=prompt)
+        # transform to [(beg,end,"word1"), ...]
+        formatted_words = self.asr.ts_words(res, conversion_function if self.vad else None)
+        return formatted_words, res
+    
+    def process_iter(self):
+        """Runs on the current audio buffer.
+        Returns: a tuple (beg_timestamp, end_timestamp, "text"), or (None, None, "").
+        The non-empty text is confirmed (committed) partial transcript.
+        """
         if self.vad:
             np_buffer = np.array(self.audio_buffer)
-            audio_speech, segments, convertion_function = remove_non_speech(
+            audio_speech, segments, conversion_function = remove_non_speech(
                 np_buffer,
                 method=self.vad,
                 use_sample=True,
@@ -296,12 +242,11 @@ class OnlineASRProcessor:
                 min_speech_duration=self.vad_min_speech_duration,
                 min_silence_duration=self.vad_min_silence_duration,
             )
-            res = self.asr.transcribe(audio_speech, init_prompt=prompt)
         else:
-            res = self.asr.transcribe(self.audio_buffer, init_prompt=prompt)
-        # transform to [(beg,end,"word1"), ...]
-        tsw = self.asr.ts_words(res, convertion_function if self.vad else None)
-        self.transcript_buffer.insert(tsw, self.buffer_time_offset)
+            audio_speech = self.audio_buffer
+            conversion_function = None
+        formatted_words, raw_transcript = self.transcribe(audio_speech, conversion_function)
+        self.transcript_buffer.insert(formatted_words, self.buffer_time_offset)
         o, buffer = self.transcript_buffer.flush()
         self.commited.extend(o)         # contains all text that is commited
         self.buffered_final.extend(o)   # contains text for final
@@ -310,7 +255,7 @@ class OnlineASRProcessor:
             buffer.pop(-1)
         if len(self.audio_buffer) / self.sampling_rate > self.buffer_trimming_sec:
             self.chunk_completed_segment(
-                res,
+                raw_transcript,
                 chunk_silence=self.vad,
                 speech_segments=segments if self.vad else False,
             )
@@ -318,18 +263,21 @@ class OnlineASRProcessor:
         logger.debug(
             f"Len of buffer now: {len(self.audio_buffer)/self.sampling_rate:2.2f}s"
         )
+        final = self.make_final()
+        partial = self.buffered_final.copy()
+        partial.extend(buffer)
+        return final, self.to_flush(partial)
 
+    def make_final(self):
         final = (None, None, "")
         end_word = None
-
-        if end_word is None:
-            for item in reversed(self.buffered_final):
-                if item[2] and item[2][-1] in [".", "!", "?"]:
-                    end_word = item[1]
-                    break
+        for item in reversed(self.buffered_final):
+            if item[2] and item[2][-1] in [".", "!", "?"]:
+                end_word = item[1]
+                break
         if end_word is None:
             for prev, curr in zip(reversed(self.buffered_final[:-1]), reversed(self.buffered_final[1:])):
-                if curr[0] - prev[0] >= self.streaming_pause_for_final:
+                if curr[0] - prev[1] >= self.streaming_pause_for_final:
                     end_word = prev[1]
                     break
         if end_word:
@@ -343,11 +291,7 @@ class OnlineASRProcessor:
                 if f:
                     final = self.to_flush(f)
                     self.buffered_final = self.buffered_final[len(f):]
-        partial = self.buffered_final.copy()
-        partial.extend(buffer)
-        return final, self.to_flush(partial)
-        
-        
+        return final
 
     def chunk_completed_segment(self, res, chunk_silence=False, speech_segments=None):
         # if self.commited == [] and not chunk_silence:
@@ -450,7 +394,68 @@ class OnlineASRProcessor:
             e = offset + sents[-1][1]
         return (b, e, t)
 
+class HypothesisBuffer:
 
+    def __init__(self, logfile=sys.stderr):
+        self.commited_in_buffer = []
+        self.buffer = []
+        self.new = []
+
+        self.last_commited_time = 0
+        self.last_commited_word = None
+        self.last_buffered_time = -1
+
+        self.logfile = logfile
+
+    def insert(self, new, offset):
+        # compare self.commited_in_buffer and new. It inserts only the words in new that extend the commited_in_buffer, it means they are roughly behind last_commited_time and new in content
+        # the new tail is added to self.new
+        new = [(a + offset, b + offset, t) for a, b, t in new]
+        self.new = [(a, b, t) for a, b, t in new if a > self.last_commited_time - 0.1]
+        if len(self.new) >= 1:
+            a, b, t = self.new[0]
+            if abs(a - self.last_commited_time) < 1:
+                if self.commited_in_buffer:
+                    # it's going to search for 1, 2, ..., 5 consecutive words (n-grams) that are identical in commited and new. If they are, they're dropped.
+                    cn = len(self.commited_in_buffer)
+                    nn = len(self.new)
+                    for i in range(1, min(min(cn, nn), 5) + 1):  # 5 is the maximum
+                        c = " ".join([self.commited_in_buffer[-j][2] for j in range(1, i + 1)][::-1])
+                        tail = " ".join(self.new[j - 1][2] for j in range(1, i + 1))
+                        if c == tail:
+                            logger.debug(f"removing last {i} words:")
+                            for j in range(i):
+                                logger.debug(f"\t{self.new.pop(0)}")
+                            break
+
+    def flush(self):
+        # returns commited chunk = the longest common prefix of 2 last inserts.
+        commit = []
+        while self.new:
+            na, nb, nt = self.new[0]
+
+            if len(self.buffer) == 0:
+                break
+
+            if nt.lower().translate(str.maketrans("", "", string.punctuation)) == self.buffer[0][2].lower().translate(str.maketrans("", "", string.punctuation)):
+                commit.append((na, nb, nt))
+                self.last_commited_word = nt
+                self.last_commited_time = nb
+                self.buffer.pop(0)
+                self.new.pop(0)
+            else:
+                break
+        self.buffer = self.new
+        self.new = []
+        self.commited_in_buffer.extend(commit)
+        return commit, self.buffer
+
+    def pop_commited(self, time):
+        while self.commited_in_buffer and self.commited_in_buffer[0][1] <= time:
+            self.commited_in_buffer.pop(0)
+
+    def complete(self):
+        return self.buffer
 class ASRBase:
 
     sep = " "  # join transcribe words with this character (" " for whisper_timestamped,

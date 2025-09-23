@@ -16,9 +16,9 @@ from punctuation.recasepunc import apply_recasepunc
 from stt import (
    logger,
    VAD, VAD_DILATATION, VAD_MIN_SPEECH_DURATION, VAD_MIN_SILENCE_DURATION,
-   STREAMING_BUFFER_TRIMMING_SEC, STREAMING_MIN_CHUNK_SIZE,
-   STREAMING_PAUSE_FOR_FINAL, STREAMING_TIMEOUT_FOR_SILENCE,
-   STREAMING_MAX_PARTIAL_ACTUALIZATION_PER_SECOND, STREAMING_MAX_WORDS_IN_BUFFER
+   STREAMING_BUFFER_TRIMMING_SEC, STREAMING_MIN_CHUNK_SIZE, STREAMING_TIMEOUT_FOR_SILENCE,
+   STREAMING_FINAL_MIN_DURATION, STREAMING_FINAL_MAX_DURATION, STREAMING_PAUSE_FOR_FINAL,
+   STREAMING_MAX_WORDS_IN_BUFFER, STREAMING_MAX_PARTIAL_ACTUALIZATION_PER_SECOND
 )
 from websockets.legacy.server import WebSocketServerProtocol
 from websockets.exceptions import ConnectionClosed
@@ -72,7 +72,10 @@ async def wssDecode(ws: WebSocketServerProtocol, model_and_alignementmodel):
         model, punctuation_model = model_and_alignementmodel
         streaming_processor = StreamingASRProcessor(model, 
             buffer_trimming=STREAMING_BUFFER_TRIMMING_SEC, pause_for_final=STREAMING_PAUSE_FOR_FINAL, max_words_in_buffer=STREAMING_MAX_WORDS_IN_BUFFER,
-            vad=VAD, dilatation=VAD_DILATATION, min_silence_duration=VAD_MIN_SILENCE_DURATION, min_speech_duration=VAD_MIN_SPEECH_DURATION
+            vad=VAD, dilatation=VAD_DILATATION, min_silence_duration=VAD_MIN_SILENCE_DURATION, min_speech_duration=VAD_MIN_SPEECH_DURATION,
+            final_min_duration=STREAMING_FINAL_MIN_DURATION,
+            final_max_duration=STREAMING_FINAL_MAX_DURATION,
+            streaming_pause_for_final=STREAMING_PAUSE_FOR_FINAL
         )
         logger.info("Starting transcription ...")
         executor = ThreadPoolExecutor()
@@ -92,15 +95,13 @@ async def wssDecode(ws: WebSocketServerProtocol, model_and_alignementmodel):
             except asyncio.TimeoutError:
                 logger.debug(f"Timeout after {timeout:.2f}s, checking for silence")
                 message = None
-            if message and len(pile)<2:
-                pile.append(message)
             if (isinstance(message, str) and re.match(EOF_REGEX, message)):
                 # End of file: send the last prediction
                 final = []
                 if current_task:    # wait for the last asynchronous prediction to finish
                     o, _ = await current_task
                     final.append(o)
-                o, _ = streaming_processor.transcribe()    # make a last prediction in case chunk was too small
+                o, _ = streaming_processor.process_iter()    # make a last prediction in case chunk was too small
                 final.append(o)
                 logger.debug(f"Last committed text: {o}")
                 b = streaming_processor.finish()
@@ -119,6 +120,8 @@ async def wssDecode(ws: WebSocketServerProtocol, model_and_alignementmodel):
                 streaming_processor.insert_audio_chunk(silence_chunk)
                 logger.debug(f"Silence chunk inserted ({(len(silence_chunk)/streaming_processor.sampling_rate):.2f}s) at {off:.2f} for {dur:.2f} (now {(len(streaming_processor.audio_buffer)/streaming_processor.sampling_rate):.2f})")
             else:
+                if len(pile)<2:
+                    pile.append(message)
                 audio_chunk = bytes_to_array(message)
                 if received_chunk_size is None:
                     received_chunk_size = len(audio_chunk)/sample_rate
@@ -138,7 +141,7 @@ async def wssDecode(ws: WebSocketServerProtocol, model_and_alignementmodel):
                             logger.info(f"Sending final '{o}'")
                             await ws.send(nemo_to_json(o, punctuation_model=punctuation_model))
                             last_responce_time = None
-                        elif p[0] is not None:
+                        if p[0] is not None:
                             t = time.time()
                             if last_responce_time is None or partial_actualization is None or t-last_responce_time>partial_actualization or len(pile)==0:
                                 logger.debug(f"Sending partial '{p}'")
@@ -147,7 +150,7 @@ async def wssDecode(ws: WebSocketServerProtocol, model_and_alignementmodel):
                         current_task = None
                     if len(pile)>0:     # if there are messages in the pile, launch a new transcription task
                         logger.debug(f"Launching new transcription on {(len(streaming_processor.audio_buffer)/streaming_processor.sampling_rate)+streaming_processor.buffer_time_offset:.2f}s")
-                        current_task = asyncio.get_event_loop().run_in_executor(executor, streaming_processor.transcribe)
+                        current_task = asyncio.get_event_loop().run_in_executor(executor, streaming_processor.process_iter)
                         pile.pop(0)
             else:
                 logger.debug(f"Chunk too small {streaming_processor.get_buffer_size()}<{STREAMING_MIN_CHUNK_SIZE} (added {len(audio_chunk)/sample_rate}), skipping")
@@ -171,6 +174,9 @@ class StreamingASRProcessor:
         min_silence_duration=0.1,
         dilatation=0.5,
         max_words_in_buffer=10,
+        final_min_duration=2,
+        final_max_duration=10,
+        streaming_pause_for_final=1,
     ):
         self.model: nemo_asr.models.EncDecCTCModel = model
         self.logfile = logfile
@@ -186,6 +192,9 @@ class StreamingASRProcessor:
         self.vad_min_silence_duration = min_silence_duration
         self.sampling_rate = sample_rate
         self.max_words_in_buffer=max_words_in_buffer
+        self.final_min_duration = final_min_duration
+        self.final_max_duration = final_max_duration
+        self.streaming_pause_for_final = streaming_pause_for_final
     
     def init(self):
         """run this when starting or restarting processing"""
@@ -222,10 +231,16 @@ class StreamingASRProcessor:
             word_list.append(i['end'])
         return word_list
 
-    def transcribe(self):
+
+    def transcribe(self, audio_speech, conversion_function):
+        hypothesis = self.model.transcribe([audio_speech], return_hypotheses=True, timestamps=True, verbose=False)[0]
+        formatted_words = self.format_words(hypothesis.timestamp['word'], conversion_function if self.vad else None)
+        return formatted_words, hypothesis
+    
+    def process_iter(self):
         if self.vad:
             np_buffer = np.array(self.audio_buffer)
-            audio_speech, segments, convertion_function = remove_non_speech(
+            audio_speech, segments, conversion_function = remove_non_speech(
                 np_buffer,
                 method=self.vad,
                 use_sample=True,
@@ -236,15 +251,14 @@ class StreamingASRProcessor:
             )
         else:
             audio_speech = self.audio_buffer
-
+            conversion_function = None
         try:
-            hypothesis = self.model.transcribe([audio_speech], return_hypotheses=True, timestamps=True, verbose=False)[0]
+            formatted_words, raw_transcript = self.transcribe(audio_speech, conversion_function)
         except Exception as e:
             # Audio might be empty, or the model might not be able to process it
             logger.error(f"Encoutered an error while transcribing: {e}")
             return (None, None, ""), self.to_flush(self.buffered_final.copy())
 
-        formatted_words = self.format_words(hypothesis.timestamp['word'], convertion_function if self.vad else None)
         self.transcript_buffer.insert(formatted_words, self.buffer_time_offset)
         o, buffer = self.transcript_buffer.flush(self.max_words_in_buffer)
         self.commited.extend(o)         # contains all text that is commited
@@ -254,7 +268,7 @@ class StreamingASRProcessor:
             buffer.pop(-1)
         if len(self.audio_buffer) / self.sampling_rate > self.buffer_trimming_sec:
             self.chunk_completed_segment(
-                hypothesis.timestamp['word'],
+                raw_transcript.timestamp['word'],
                 chunk_silence=self.vad,
                 speech_segments=segments if self.vad else False,
             )
@@ -262,36 +276,35 @@ class StreamingASRProcessor:
         logger.debug(
             f"Len of buffer now: {len(self.audio_buffer)/self.sampling_rate:2.2f}s"
         )
-        final = self.make_final(buffer)
+        final = self.make_final()
         partial = self.buffered_final.copy()
         partial.extend(buffer)
         return final, self.to_flush(partial)
 
 
-    def make_final(self, buffer):
+    def make_final(self):
         final = (None, None, "")
-        if len(self.buffered_final)>2:      # and self.buffered_final[-1][2][-1] in string.punctuation:
-            end_word = self.buffered_final[-1][1]
-        else:
-            end_word = None
-        # if there are no words in the buffer (all words are committed), a final should be output
-        if len(buffer)==0:
-            buffer_end_audio_timestamp = (len(self.audio_buffer)/self.sampling_rate)+self.buffer_time_offset
-        # if there are only a few words in the buffer, a final should be output with the text before the buffer
-        elif len(buffer)<=3:
-            buffer_end_audio_timestamp = buffer[0][1]
-        else:
-            buffer_end_audio_timestamp = None
-        if end_word and buffer_end_audio_timestamp and end_word+self.pause_for_final < buffer_end_audio_timestamp :
+        end_word = None
+        for item in reversed(self.buffered_final):
+            if item[2] and item[2][-1] in [".", "!", "?"]:
+                end_word = item[1]
+                break
+        if end_word is None:
+            for prev, curr in zip(reversed(self.buffered_final[:-1]), reversed(self.buffered_final[1:])):
+                if curr[0] - prev[1] >= self.streaming_pause_for_final:
+                    end_word = prev[1]
+                    break
+        if end_word:
             # assemble the final
             f = []
             for i in self.buffered_final:
                 if i[1]>end_word:
                     break
                 f.append(i)
-            if f:
-                final = self.to_flush(f)
-                self.buffered_final = self.buffered_final[len(f):]
+            if f[-1][1]-f[0][0]>self.final_min_duration:
+                if f:
+                    final = self.to_flush(f)
+                    self.buffered_final = self.buffered_final[len(f):]
         return final
         
     
