@@ -57,7 +57,7 @@ def nemo_to_json(o, partial=False, punctuation_model=None):
     return json_res
 
 
-async def wssDecode(ws: WebSocketServerProtocol, model_and_alignementmodel, connection_id):
+async def wssDecode(ws: WebSocketServerProtocol, model_and_alignementmodel):
     """Async Decode function endpoint"""
     try:
         res = await ws.recv()
