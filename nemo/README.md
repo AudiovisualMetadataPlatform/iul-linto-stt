@@ -415,7 +415,7 @@ See [Common parameters](#parameters) for other parameters.
 
 #### STREAMING_PAUSE_FOR_FINAL environment variable
 
-The `STREAMING_PAUSE_FOR_FINAL` value will depend on your type of speech. On prepared speech for example, you can probably lower it whereas on real discussions you can leave it as default or increase it. Without punctuations, 1.5 seconds is a good value. With punctuations, you can lower it to 1 second because a final will be outputted only when a punctuation is detected.
+The `STREAMING_PAUSE_FOR_FINAL` value will depend on your type of speech. If the model has punctuations, it will only help to output a final, otherwise it is the main way to output finals.
 
 #### PUNCTUATION_MODEL environment variable
 

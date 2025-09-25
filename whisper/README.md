@@ -315,7 +315,7 @@ For "`STREAMING_BUFFER_TRIMMING_SEC`", you will need to have a value lower than 
 Good results can be obtained by using a value between 6 and 12 seconds.
 The lower the value, the lower the GPU usage will be (because audio buffer will be smaller), but you will probably degrade transcription accuracy (more error on words because the model will miss some context).
 
-The "`STREAMING_PAUSE_FOR_FINAL`" value will depend on your type of speech. On prepared speech for example, you can probably lower it whereas on real discussions you can leave it as default or increase it. 
+The "`STREAMING_PAUSE_FOR_FINAL`" value will depend on your type of speech. It will help to output a final if no punctuations are detected for a while.
 
 <!-- Concerning transcription accuracies, some tests on transcription in French gave the following results:
 * around 20% WER (Word Error Rate) with offline transcription,
