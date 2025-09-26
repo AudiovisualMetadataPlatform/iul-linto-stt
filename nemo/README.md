@@ -396,7 +396,7 @@ The data exchange process follows these steps:
 4. Back to 2-
 5. Server send a final result and close the connection.
 
-Final results are based on punctuations and silences (`STREAMING_PAUSE_FOR_FINAL`). If none are found, it falls back to `STREAMING_FINAL_MAX_DURATION`. `PUNCTUATION_MODEL` does not help because it addds punctuations only once final results are done.
+Final results are based on punctuation marks detected by the Nemo model, and silences (`STREAMING_PAUSE_FOR_FINAL`). If none are found, it falls back to `STREAMING_FINAL_MAX_DURATION`.
 
 ### Streaming parameters
 
@@ -413,15 +413,16 @@ See [Common parameters](#parameters) for other parameters.
 | STREAMING_PAUSE_FOR_FINAL | The minimum duration of silence (in seconds) needed between words to be able to output a final. Used if no punctuation marks are found in text. If not specified, the default is 1.0 | `0.5` \| `2` \| ... |
 | STREAMING_MAX_WORDS_IN_BUFFER | How much words can stay in the buffer. It means how much words can be changed. Default is 4 | `4` \| `2` \| ... |
 | STREAMING_MAX_PARTIAL_ACTUALIZATION_PER_SECOND | The maximum of messages that can be sent by the server to the client in one second. Default is 4, put 0 to deactivate it | `3` \| ... |
-| [PUNCTUATION_MODEL](#punctuation_model-environment-variable) | Path to a recasepunc model, for recovering punctuation and upper letter in streaming. Use it if your model doesn't output punctuation and upper case letters.  | /opt/PUNCT |
+| [PUNCTUATION_MODEL](#punctuation_model-environment-variable) | Path to a recasepunc model, for recovering punctuation and upper letter in streaming. Use it if your Nemo model doesn't output punctuation and upper case letters.  | /opt/PUNCT |
 
 #### STREAMING_PAUSE_FOR_FINAL environment variable
 
-The `STREAMING_PAUSE_FOR_FINAL` is the amount of silence needed to output a final result. If the model has punctuations, it will only help to output a final, otherwise it is the main way to output finals. You may want to adjust it depending on your speech type.
+The `STREAMING_PAUSE_FOR_FINAL` is the amount of silence needed to output a final result. If the model can emit punctuation marks, it will only help to output a final, otherwise it is the main way to output finals. You may want to adjust it depending on your speech type.
 
 #### PUNCTUATION_MODEL environment variable
 
-If you use a model that outputs lower-case text without punctuations, you can specify a recasepunc model (which must be in version 0.4 at least). It will adds punctuations to the final results only so it does not help to make final results.
+If you use a model that outputs lower-case text without punctuation marks, you can specify a recasepunc model (which must be in version 0.4 at least). It will add punctuation marks to the final results only.
+
 Some recasepunc models trained on [Common Crawl](http://data.statmt.org/cc-100/) are available on [recasepunc](https://github.com/benob/recasepunc/releases/) for the following the languages:
 * French
   * [fr.24000](https://github.com/benob/recasepunc/releases/download/0.4/fr.24000)
