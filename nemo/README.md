@@ -396,6 +396,8 @@ The data exchange process follows these steps:
 4. Back to 2-
 5. Server send a final result and close the connection.
 
+Final results are based on punctuation marks detected by the Nemo model, and silences (`STREAMING_PAUSE_FOR_FINAL`). If none are found, it falls back to `STREAMING_FINAL_MAX_DURATION`.
+
 ### Streaming parameters
 
 See [Common parameters](#parameters) for other parameters.
@@ -406,17 +408,21 @@ See [Common parameters](#parameters) for other parameters.
 | STREAMING_BUFFER_TRIMMING_SEC | The maximum targeted length of the buffer (in seconds). It tries to cut after a transcription has been made (bigger value=higher hardware usage). Default is 8 | `8` \| `10` \| ... |
 | [STREAMING_PAUSE_FOR_FINAL](#streaming_pause_for_final-environment-variable) | The minimum duration of silence (in seconds) needed to be able to output a final. Default is 1.5 | `0.5` \| `2` \| ... |
 | STREAMING_TIMEOUT_FOR_SILENCE | If a VAD is applied externally, this parameter will allow the server to find the silence (silences are used to output `final`). The `packet duration` is determined from the first packet. If a packet is not received during `packet duration * STREAMING_TIMEOUT_FOR_SILENCE` it considers that a silence (lasting the packet duration) is present. If specified, value should be between 1 and 2 (2 times the duration of a packet). Default is deactivated | `1.8` \| ... |
+| STREAMING_FINAL_MIN_DURATION | The minimum duration of a final. If not specified, the default is 2 | `1` \| `2` \| ... |
+| STREAMING_FINAL_MAX_DURATION | The maxmimum duration of a final. If not specified, the default is 20 | `20` \| `10` \| ... |
+| STREAMING_PAUSE_FOR_FINAL | The minimum duration of silence (in seconds) needed between words to be able to output a final. Used if no punctuation marks are found in text. If not specified, the default is 1.0 | `0.5` \| `2` \| ... |
 | STREAMING_MAX_WORDS_IN_BUFFER | How much words can stay in the buffer. It means how much words can be changed. Default is 4 | `4` \| `2` \| ... |
 | STREAMING_MAX_PARTIAL_ACTUALIZATION_PER_SECOND | The maximum of messages that can be sent by the server to the client in one second. Default is 4, put 0 to deactivate it | `3` \| ... |
-| [PUNCTUATION_MODEL](#punctuation_model-environment-variable) | Path to a recasepunc model, for recovering punctuation and upper letter in streaming. Use it if your model doesn't output punctuation and upper case letters.  | /opt/PUNCT |
+| [PUNCTUATION_MODEL](#punctuation_model-environment-variable) | Path to a recasepunc model, for recovering punctuation and upper letter in streaming. Use it if your Nemo model doesn't output punctuation and upper case letters.  | /opt/PUNCT |
 
 #### STREAMING_PAUSE_FOR_FINAL environment variable
 
-The `STREAMING_PAUSE_FOR_FINAL` value will depend on your type of speech. On prepared speech for example, you can probably lower it whereas on real discussions you can leave it as default or increase it. Without punctuations, 1.5 seconds is a good value. With punctuations, you can lower it to 1 second because a final will be outputted only when a punctuation is detected.
+The `STREAMING_PAUSE_FOR_FINAL` is the amount of silence needed to output a final result. If the model can emit punctuation marks, it will only help to output a final, otherwise it is the main way to output finals. You may want to adjust it depending on your speech type.
 
 #### PUNCTUATION_MODEL environment variable
 
-If you use a model that outputs lower-case text without punctuations, you can specify a recasepunc model (which must be in version 0.4 at least).
+If you use a model that outputs lower-case text without punctuation marks, you can specify a recasepunc model (which must be in version 0.4 at least). It will add punctuation marks to the final results only.
+
 Some recasepunc models trained on [Common Crawl](http://data.statmt.org/cc-100/) are available on [recasepunc](https://github.com/benob/recasepunc/releases/) for the following the languages:
 * French
   * [fr.24000](https://github.com/benob/recasepunc/releases/download/0.4/fr.24000)
@@ -429,8 +435,6 @@ After downloading a recasepunc model, you can mount it as a volume and specify i
 ```
 
 ### Example with lowest latency
-
-todo example config with latency expected, used resources, etc.
 
 #### English
 Here is a config for low latency streaming in English that you can use as a starting point:

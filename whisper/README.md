@@ -140,7 +140,9 @@ An example of .env file is provided in [whisper/.envdefault](https://github.com/
 | STREAMING_PORT | (For the websocket mode) the listening port for ingoing WS connexions. If not specified, the default is 80 | `80` |
 | STREAMING_MIN_CHUNK_SIZE | The minimal size of the buffer (in seconds) before transcribing. If not specified, the default is 0.5 | `0.5` \| `26` \| ... |
 | STREAMING_BUFFER_TRIMMING_SEC | The maximum targeted length of the buffer (in seconds). It tries to cut after a transcription has been made. If not specified, the default is 8 | `8` \| `10` \| ... |
-| STREAMING_PAUSE_FOR_FINAL | The minimum duration of silence (in seconds) needed to be able to output a final. If not specified, the default is 1.5 | `0.5` \| `2` \| ... |
+| STREAMING_FINAL_MIN_DURATION | The minimum duration of a final. If not specified, the default is 2 | `1` \| `2` \| ... |
+| STREAMING_FINAL_MAX_DURATION | The maxmimum duration of a final. If not specified, the default is 20 | `20` \| `10` \| ... |
+| STREAMING_PAUSE_FOR_FINAL | The minimum duration of silence (in seconds) needed between words to be able to output a final. Used if no punctuation marks are found in text. If not specified, the default is 1.0 | `0.5` \| `2` \| ... |
 | STREAMING_TIMEOUT_FOR_SILENCE | If VAD is applied locally before sending data to the server, this will allow the server to find the silence. The `packet duration` is determined from the first packet. If a packet is not received during `packet duration * STREAMING_TIMEOUT_FOR_SILENCE` it considers that a silence (lasting the packet duration) is present. Value should be between 1 and 2. If not specified, the default is 1.5 | `1.8` \| ... |
 | SERVICE_NAME | (For the task mode only) queue's name for task processing | `my-stt` |
 | SERVICE_BROKER | (For the task mode only) URL of the message broker | `redis://my-broker:6379` |
@@ -304,6 +306,11 @@ The exchanges are structured as followed:
 
 We advise to run streaming on a GPU device with Whisper-large-v3-turbo or smaller models (avoid using Whisper-large-v3 because it is very expensive). We also recommend to use a VAD on the server side (silero for example).
 
+Final results are based on punctuation marks detected by Whisper, and silences (`STREAMING_PAUSE_FOR_FINAL`). If none are found, it falls back to `STREAMING_FINAL_MAX_DURATION`.
+
+The "`STREAMING_PAUSE_FOR_FINAL`" is the amount of silence needed to output a final result. It will help to output a final if no punctuation marks are detected for a while. You may want to adjust it depending on your speech type.
+
+
 How to choose the 2 streaming parameters "`STREAMING_MIN_CHUNK_SIZE`" and "`STREAMING_BUFFER_TRIMMING_SEC`"?
 - If you want a low latency (2 to a 5 seconds on a NVIDIA 4090 Laptop), choose a small value for "STREAMING_MIN_CHUNK_SIZE" like 0.5 seconds (to avoid making useless predictions).
 For "`STREAMING_BUFFER_TRIMMING_SEC`", around 10 seconds is a good compromise between keeping latency low and having a good transcription accuracy.
@@ -313,7 +320,6 @@ For "`STREAMING_BUFFER_TRIMMING_SEC`", you will need to have a value lower than 
 Good results can be obtained by using a value between 6 and 12 seconds.
 The lower the value, the lower the GPU usage will be (because audio buffer will be smaller), but you will probably degrade transcription accuracy (more error on words because the model will miss some context).
 
-The "`STREAMING_PAUSE_FOR_FINAL`" value will depend on your type of speech. On prepared speech for example, you can probably lower it whereas on real discussions you can leave it as default or increase it. 
 
 <!-- Concerning transcription accuracies, some tests on transcription in French gave the following results:
 * around 20% WER (Word Error Rate) with offline transcription,

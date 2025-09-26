@@ -1,3 +1,6 @@
+# 1.0.2
+- Improve finals for streaming
+
 # 1.0.1
 - Fix timestamps for offline long audio files
 
