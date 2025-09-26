@@ -396,7 +396,7 @@ The data exchange process follows these steps:
 4. Back to 2-
 5. Server send a final result and close the connection.
 
-Final results are based on punctuations and silences. If none are found, it falls back to STREAMING_FINAL_MAX_DURATION.
+Final results are based on punctuations and silences (`STREAMING_PAUSE_FOR_FINAL`). If none are found, it falls back to `STREAMING_FINAL_MAX_DURATION`. `PUNCTUATION_MODEL` does not help because it addds punctuations only once final results are done.
 
 ### Streaming parameters
 
@@ -421,7 +421,7 @@ The `STREAMING_PAUSE_FOR_FINAL` is the amount of silence needed to output a fina
 
 #### PUNCTUATION_MODEL environment variable
 
-If you use a model that outputs lower-case text without punctuations, you can specify a recasepunc model (which must be in version 0.4 at least). It will adds punctuations to the final results only.
+If you use a model that outputs lower-case text without punctuations, you can specify a recasepunc model (which must be in version 0.4 at least). It will adds punctuations to the final results only so it does not help to make final results.
 Some recasepunc models trained on [Common Crawl](http://data.statmt.org/cc-100/) are available on [recasepunc](https://github.com/benob/recasepunc/releases/) for the following the languages:
 * French
   * [fr.24000](https://github.com/benob/recasepunc/releases/download/0.4/fr.24000)

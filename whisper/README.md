@@ -306,7 +306,7 @@ The exchanges are structured as followed:
 
 We advise to run streaming on a GPU device with Whisper-large-v3-turbo or smaller models (avoid using Whisper-large-v3 because it is very expensive). We also recommend to use a VAD on the server side (silero for example).
 
-Final results are based on punctuations and silences. If none are found, it falls back to STREAMING_FINAL_MAX_DURATION.
+Final results are based on punctuations and silences (`STREAMING_PAUSE_FOR_FINAL`). If none are found, it falls back to `STREAMING_FINAL_MAX_DURATION`.
 
 The "`STREAMING_PAUSE_FOR_FINAL`" is the amount of silence needed to output a final result. It will help to output a final if no punctuations are detected for a while. You may want to adjust it depending on your speech type.
 
