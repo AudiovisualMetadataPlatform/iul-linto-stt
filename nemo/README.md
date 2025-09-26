@@ -396,6 +396,8 @@ The data exchange process follows these steps:
 4. Back to 2-
 5. Server send a final result and close the connection.
 
+Final results are based on punctuations and silences. If none are found, it falls back to STREAMING_FINAL_MAX_DURATION.
+
 ### Streaming parameters
 
 See [Common parameters](#parameters) for other parameters.
@@ -415,11 +417,11 @@ See [Common parameters](#parameters) for other parameters.
 
 #### STREAMING_PAUSE_FOR_FINAL environment variable
 
-The `STREAMING_PAUSE_FOR_FINAL` value will depend on your type of speech. If the model has punctuations, it will only help to output a final, otherwise it is the main way to output finals.
+The `STREAMING_PAUSE_FOR_FINAL` is the amount of silence needed to output a final result. If the model has punctuations, it will only help to output a final, otherwise it is the main way to output finals. You may want to adjust it depending on your speech type.
 
 #### PUNCTUATION_MODEL environment variable
 
-If you use a model that outputs lower-case text without punctuations, you can specify a recasepunc model (which must be in version 0.4 at least).
+If you use a model that outputs lower-case text without punctuations, you can specify a recasepunc model (which must be in version 0.4 at least). It will adds punctuations to the final results only.
 Some recasepunc models trained on [Common Crawl](http://data.statmt.org/cc-100/) are available on [recasepunc](https://github.com/benob/recasepunc/releases/) for the following the languages:
 * French
   * [fr.24000](https://github.com/benob/recasepunc/releases/download/0.4/fr.24000)
@@ -432,8 +434,6 @@ After downloading a recasepunc model, you can mount it as a volume and specify i
 ```
 
 ### Example with lowest latency
-
-todo example config with latency expected, used resources, etc.
 
 #### English
 Here is a config for low latency streaming in English that you can use as a starting point:

@@ -306,6 +306,11 @@ The exchanges are structured as followed:
 
 We advise to run streaming on a GPU device with Whisper-large-v3-turbo or smaller models (avoid using Whisper-large-v3 because it is very expensive). We also recommend to use a VAD on the server side (silero for example).
 
+Final results are based on punctuations and silences. If none are found, it falls back to STREAMING_FINAL_MAX_DURATION.
+
+The "`STREAMING_PAUSE_FOR_FINAL`" is the amount of silence needed to output a final result. It will help to output a final if no punctuations are detected for a while. You may want to adjust it depending on your speech type.
+
+
 How to choose the 2 streaming parameters "`STREAMING_MIN_CHUNK_SIZE`" and "`STREAMING_BUFFER_TRIMMING_SEC`"?
 - If you want a low latency (2 to a 5 seconds on a NVIDIA 4090 Laptop), choose a small value for "STREAMING_MIN_CHUNK_SIZE" like 0.5 seconds (to avoid making useless predictions).
 For "`STREAMING_BUFFER_TRIMMING_SEC`", around 10 seconds is a good compromise between keeping latency low and having a good transcription accuracy.
@@ -315,7 +320,6 @@ For "`STREAMING_BUFFER_TRIMMING_SEC`", you will need to have a value lower than 
 Good results can be obtained by using a value between 6 and 12 seconds.
 The lower the value, the lower the GPU usage will be (because audio buffer will be smaller), but you will probably degrade transcription accuracy (more error on words because the model will miss some context).
 
-The "`STREAMING_PAUSE_FOR_FINAL`" value will depend on your type of speech. It will help to output a final if no punctuations are detected for a while.
 
 <!-- Concerning transcription accuracies, some tests on transcription in French gave the following results:
 * around 20% WER (Word Error Rate) with offline transcription,
