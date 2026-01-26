@@ -223,6 +223,7 @@ lintoai/linto-stt-nemo
 See [Common parameters](#parameters) for other parameters.
 | PARAMETER | DESCRIPTION | EXAMPLE |
 |---|---|---|
+| SERVICE_PORT | Port for the http server, defaults to 80 | `8080` |
 | [CONCURRENCY](#concurrency-environment-variable) | Maximum number of parallel requests plus one. For example CONCURRENCY=0 means 1 worker, CONCURRENCY=1 means 2 workers, etc. | `2` |
 | [LONG_FILE_THRESHOLD](#long_file-environment-variables) | A file longer than that will be split into smaller chunks to avoid Out of Memory issues. This value depends on your VRAM/RAM amount. Default is 480s (8mins) | `480` \| `240`
 | LONG_FILE_CHUNK_LEN | For long form transcription, size of the chunks into which the audio is splitted. This value depends on your VRAM/RAM amount. Default is 240s (4mins) | `240` \| `120`
@@ -547,6 +548,25 @@ With this config:
 - Include punctuation: yes
 - Latency: around 2.5s (depends on your hardware)
 - VRAM: around 4.5GB
+
+
+## Apptainer/Singularity
+Apptainer containers create a portable container file that can be easily copied
+to other systems and run as a normal user.  
+
+### Building the container:
+```
+apptainer build linto-stt-nemo.sif linto-stt-nemo.def
+```
+
+### Running the container
+The environment variables above all work as in docker. The models are stored
+in the user's home directory.  To enable CUDA and allow it to write lock files,
+the apptainer must be started like:
+
+```
+apptainer run --writable-tmpfs --nv --env MODEL=nvidia/parakeet-tdt-0.6b-v2 --env SERVICE_MODE=http --env SERVICE_PORT=8080 ./linto-stt-nemo.sif
+```
 
 ## License
 This project is licensed under AGPLv3 (see LICENSE).
