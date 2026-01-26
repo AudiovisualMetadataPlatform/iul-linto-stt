@@ -82,7 +82,7 @@ else
     if [[ "$SERVICE_MODE" == "http" && "$ENABLE_STREAMING" != "true" ]]
     then
         echo "RUNNING STT HTTP SERVER"
-        gosu "$USER_NAME" python3 http_server/ingress.py --debug
+        gosu "$USER_NAME" python3 http_server/ingress.py --service_port ${SERVICE_PORT:=80} --debug
     elif [ "$SERVICE_MODE" == "task" ]
     then
         if [[ -z "$SERVICES_BROKER" ]]

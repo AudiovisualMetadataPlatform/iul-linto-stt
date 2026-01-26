@@ -1,0 +1,45 @@
+# Apptainer/Singularity Definition for contianer
+Bootstrap: docker
+From: python:3.10
+
+%labels
+    Maintainer bdwheele@iu.edu
+
+%setup
+    mkdir ${SINGULARITY_ROOTFS}/usr/src/app
+
+%files
+    ../nemo/requirements.txt /nemo-requirements.txt
+    ../punctuation/requirements.txt /punctuation-requirements.txt
+    ../celery_app /usr/src/app/celery_app
+    ../http_server /usr/src/app/http_server
+    ../websocket /usr/src/app/websocket
+    ../document /usr/src/app/document
+    ../nemo/stt /usr/src/app/stt
+    ../punctuation /usr/src/app/punctuation
+    ../wait-for-it.sh /usr/src/app/wait-for-it.sh
+    ../healthcheck.sh /usr/src/app/healthcheck.sh
+    ../test/bonjour.wav /usr/src/app/test/bonjour.wav
+    apptainer-entrypoint.sh /
+
+%post
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get upgrade -y 
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        libsndfile1 sox \
+        libfreetype6 \
+        swig \
+        ffmpeg \
+        netcat-traditional \
+        libavdevice-dev
+    rm -rf /var/lib/apt/lists/*
+    # Install python dependencies
+    pip install Cython
+    pip install --upgrade pip
+    pip install --no-cache-dir -r /nemo-requirements.txt && rm /nemo-requirements.txt
+    pip install --no-cache-dir -r /punctuation-requirements.txt && rm /punctuation-requirements.txt
+        
+%runscript
+   export PYTHONPATH=/usr/src/app
+   cd /usr/src/app
+   /apptainer-entrypoint.sh 
