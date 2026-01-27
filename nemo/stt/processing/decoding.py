@@ -50,6 +50,7 @@ def decode_encoder(
     **kwargs,
 ):
     start_t = time.time()
+    audio_duration = len(audio) / SAMPLE_RATE
     if VAD:
         audio_speech, _, _ = remove_non_speech(audio, use_sample=True, method=VAD, dilatation=VAD_DILATATION, \
             min_silence_duration=VAD_MIN_SILENCE_DURATION, min_speech_duration=VAD_MIN_SPEECH_DURATION, avoid_empty_speech=True)
@@ -66,7 +67,8 @@ def decode_encoder(
     end_t = time.time()
     res['processing'] = {
         'processing_time': end_t - start_t,
-        'media_duration': len(audio) / SAMPLE_RATE,
+        'vad_duration': len(audio) / SAMPLE_RATE,
+        'audio_duration': audio_duration,
         'options': {
             'with_word_timestamps': with_word_timestamps,
             'language': language,

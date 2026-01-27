@@ -1,0 +1,40 @@
+# Apptainer/Singularity Definition for contianer
+Bootstrap: docker
+From: python:3.10
+
+%labels
+    Maintainer bdwheele@iu.edu
+
+%setup
+    mkdir ${SINGULARITY_ROOTFS}/usr/src/app
+
+%files
+    ../nemo/requirements.txt /nemo-requirements.txt
+    ../punctuation/requirements.txt /punctuation-requirements.txt
+    ../document /usr/src/app/document
+    ../nemo/stt /usr/src/app/stt
+    ../punctuation /usr/src/app/punctuation
+    ../test/bonjour.wav /usr/src/app/test/bonjour.wav
+    ../cli /usr/src/app/cli
+
+%post
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get upgrade -y 
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        libsndfile1 sox \
+        libfreetype6 \
+        swig \
+        ffmpeg \
+        netcat-traditional \
+        libavdevice-dev
+    rm -rf /var/lib/apt/lists/*
+    # Install python dependencies
+    pip install Cython
+    pip install --upgrade pip
+    pip install --no-cache-dir -r /nemo-requirements.txt && rm /nemo-requirements.txt
+    pip install --no-cache-dir -r /punctuation-requirements.txt && rm /punctuation-requirements.txt
+        
+%runscript
+   export PYTHONPATH=/usr/src/app
+   cd /usr/src/app
+   exec python3 cli/main.py "$@"
