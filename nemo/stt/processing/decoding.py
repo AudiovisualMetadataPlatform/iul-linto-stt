@@ -49,6 +49,7 @@ def decode_encoder(
     remove_punctuation_from_words,
     **kwargs,
 ):
+    start_t = time.time()
     if VAD:
         audio_speech, _, _ = remove_non_speech(audio, use_sample=True, method=VAD, dilatation=VAD_DILATATION, \
             min_silence_duration=VAD_MIN_SILENCE_DURATION, min_speech_duration=VAD_MIN_SPEECH_DURATION, avoid_empty_speech=True)
@@ -57,11 +58,24 @@ def decode_encoder(
         logger.info(f"Audio last more than {LONG_FILE_THRESHOLD/60}min, splitting the decoding")
         hypothesis = stream_long_file(audio, model)
         hypothesis['language'] = language
-        return format_nemo_response(hypothesis, from_dict=True, remove_punctuation_from_words=remove_punctuation_from_words, with_word_timestamps=with_word_timestamps)
+        res = format_nemo_response(hypothesis, from_dict=True, remove_punctuation_from_words=remove_punctuation_from_words, with_word_timestamps=with_word_timestamps)
     else:
         hypothesis = model.transcribe([audio], return_hypotheses=True, timestamps=True)[0]      # /!\ Will run out of memory on long audios
         hypothesis.language = language
-        return format_nemo_response(hypothesis, from_dict=False, remove_punctuation_from_words=remove_punctuation_from_words, with_word_timestamps=with_word_timestamps)
+        res = format_nemo_response(hypothesis, from_dict=False, remove_punctuation_from_words=remove_punctuation_from_words, with_word_timestamps=with_word_timestamps)
+    end_t = time.time()
+    res['processing'] = {
+        'processing_time': end_t - start_t,
+        'media_duration': len(audio) / SAMPLE_RATE,
+        'options': {
+            'with_word_timestamps': with_word_timestamps,
+            'language': language,
+            'remove_punctuation_from_words': remove_punctuation_from_words,
+            **kwargs
+        }
+    }
+    return res
+
 
 def contains_alphanum(text: str) -> bool:
     return re.search(r"[^\W\'\-_]", text)
