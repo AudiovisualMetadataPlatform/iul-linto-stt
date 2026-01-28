@@ -572,8 +572,8 @@ apptainer run --writable-tmpfs --nv --env MODEL=nvidia/parakeet-tdt-0.6b-v2 --en
 The cli started similarly.  The arguments are a list of filenames (where the 
 output will have .json appended) or inputfile=outputfile pairs.
 ```
-apptainer run --writable-tmpfs --nv --env MODEL=nvidia/parakeet-tdt-0.6b-v2 --env ./linto-stt-nemo-cli.sif inputfile.wav
-apptainer run --writable-tmpfs --nv --env MODEL=nvidia/parakeet-tdt-0.6b-v2 --env ./linto-stt-nemo-cli.sif inputfile.wav=outputfile.json
+apptainer run --writable-tmpfs --nv --env MODEL=nvidia/parakeet-tdt-0.6b-v2  ./linto-stt-nemo-cli.sif inputfile.wav
+apptainer run --writable-tmpfs --nv --env MODEL=nvidia/parakeet-tdt-0.6b-v2 ./linto-stt-nemo-cli.sif inputfile.wav=outputfile.json
 ```
 
 
