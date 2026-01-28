@@ -556,17 +556,26 @@ to other systems and run as a normal user.
 
 ### Building the container:
 ```
-apptainer build linto-stt-nemo.sif linto-stt-nemo.def
+apptainer build linto-stt-nemo-server.sif linto-stt-nemo-server.def
+apptainer build linto-stt-nemo-cli.sif linto-stt-nemo-cli.def
 ```
 
 ### Running the container
 The environment variables above all work as in docker. The models are stored
 in the user's home directory.  To enable CUDA and allow it to write lock files,
-the apptainer must be started like:
+the apptainer for http server must be started like:
 
 ```
-apptainer run --writable-tmpfs --nv --env MODEL=nvidia/parakeet-tdt-0.6b-v2 --env SERVICE_MODE=http --env SERVICE_PORT=8080 ./linto-stt-nemo.sif
+apptainer run --writable-tmpfs --nv --env MODEL=nvidia/parakeet-tdt-0.6b-v2 --env SERVICE_MODE=http --env SERVICE_PORT=8080 ./linto-stt-nemo-server.sif
 ```
+
+The cli started similarly.  The arguments are a list of filenames (where the 
+output will have .json appended) or inputfile=outputfile pairs.
+```
+apptainer run --writable-tmpfs --nv --env MODEL=nvidia/parakeet-tdt-0.6b-v2 --env ./linto-stt-nemo-cli.sif inputfile.wav
+apptainer run --writable-tmpfs --nv --env MODEL=nvidia/parakeet-tdt-0.6b-v2 --env ./linto-stt-nemo-cli.sif inputfile.wav=outputfile.json
+```
+
 
 ## License
 This project is licensed under AGPLv3 (see LICENSE).
