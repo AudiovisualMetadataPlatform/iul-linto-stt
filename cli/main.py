@@ -21,14 +21,22 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--debug", default=False, action="store_true", help="Enable Debugging")
     parser.add_argument("--language", default="en", help="Language to use")
-    parser.add_argument("file", nargs="+", help="filename or filename=output specs")
+    parser.add_argument("--manifest", default=False, action="store_true", help="specified files are manifest files")
+    parser.add_argument("file", nargs="+", help="filename or filename=output specs, or manifest files")
     args = parser.parse_args()
     logger_level = logging.DEBUG if args.debug else logging.INFO
     logger.setLevel(logger_level)
     stt_logger.setLevel(logger_level)
     logger.info(args)
 
-    for filespec in args.file:
+    todo = []
+    if args.manifest:
+        for m in args.file:
+            todo.extend(Path(m).read_text().splitlines())
+    else:
+        todo = args.file
+
+    for filespec in todo:
         if '=' in filespec:
             srcfile, dstfile = filespec.split('=', 1)
         else:
